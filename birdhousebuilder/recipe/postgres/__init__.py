@@ -51,7 +51,7 @@ class Recipe(object):
         self.create_bin_scripts()
         if not os.path.exists(self.options['location']):
             os.mkdir(self.options['location'])
-        #Donrt touch an existing database
+        #Don't touch an existing database
         if self.pgdata_exists():
             self.stopdb()
             return self.options['location']
@@ -81,12 +81,13 @@ class Recipe(object):
             self.system('%s restart'%(self.bin_pg_ctl))
         else:
             self.system('%s start'%(self.bin_pg_ctl))
-        time.sleep(4)
+        # TODO: check if db is realy up
+        time.sleep(10)
 
     def stopdb(self):
         if os.path.exists(os.path.join(self.options.get('pgdata'),'postmaster.pid')):
             self.system('%s stop'%(self.bin_pg_ctl))
-            time.sleep(4)
+            time.sleep(10)
 
     def isdbstarted(self):
         PIDFILE = os.path.join(self.options.get('pgdata'),'postmaster.pid')
@@ -138,5 +139,5 @@ class Recipe(object):
             if not cmd: continue
             try: self.system('%s/%s' % (bin, cmd))
             except RuntimeError, e:
-                pass
+                self.logger.exception('could not run pg setup commands!')
         dest = self.options['location']
