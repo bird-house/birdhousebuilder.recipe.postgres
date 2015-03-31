@@ -41,20 +41,23 @@ class Recipe(object):
         self.options['port'] = self.options.get('port', '5433')
         self.options['initdb'] = self.options.get('initdb', '--auth=trust')
 
-    def install(self):
-        """installer"""       
+    def install(self, update=False):
         installed = []
-        installed += list(self.install_pkgs())
-        installed += list(self.install_pg_supervisor())
+        installed += list(self.install_pkgs(update))
+        installed += list(self.install_pg_supervisor(update))
         installed += list(self.install_pg())
         return tuple()
 
-    def install_pkgs(self):
+    def install_pkgs(self, update=False):
         script = conda.Recipe(
             self.buildout,
             self.name,
             {'pkgs': 'postgresql'})
-        return script.install()
+        if update == True:
+            script.update()
+        else:
+            script.install()
+        return tuple()
 
     def install_pg_supervisor(self, update=False):
         script = supervisor.Recipe(
@@ -71,28 +74,23 @@ class Recipe(object):
         return tuple()
     
     def install_pg(self):
-        # Don't touch an existing database
         if self.pgdata_exists():
-            return tuple()
-
-        self.stopdb()
-        self.initdb()
-        self.configure_port()
-        self.startdb()
-
-        self.do_cmds()
-        self.stopdb()
-        return tuple()
-
-    def update(self):
-        if not self.pgdata_exists():
+            # just update port
+            self.configure_port()
+        else:
+            # initdb
             self.stopdb()
             self.initdb()
+            self.configure_port()
+            
+            # apply user commands
             self.startdb()
             self.do_cmds()
             self.stopdb()
-        self.configure_port()
         return tuple()
+
+    def update(self):
+        return self.install(update=True)
 
     # helper messages
     # ---------------
