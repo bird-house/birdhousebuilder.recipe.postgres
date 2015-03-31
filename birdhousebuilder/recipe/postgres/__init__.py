@@ -44,7 +44,7 @@ class Recipe(object):
         self.prefix = self.options.get('prefix', conda.prefix())
         self.options['prefix'] = self.prefix
         
-        options['location'] = options['prefix'] = os.path.join(
+        options['location'] = os.path.join(
             buildout['buildout']['parts-directory'],
             name)
         self.options['port'] = self.options.get('port', '5433')
@@ -64,7 +64,6 @@ class Recipe(object):
         installed = []
         installed += list(self.install_pkgs())
         installed += list(self.install_pg())
-        installed += list(self.install_pg_config())
         installed += list(self.install_pg_supervisor())
         return tuple()
 
@@ -94,21 +93,6 @@ class Recipe(object):
         self.do_cmds()
         self.stopdb()
         return self.options['location']
-
-    def install_pg_config(self):
-        result = templ_pg_config.render(port=self.options['port'])
-        output = os.path.join(self.prefix, 'var', 'lib', 'postgres', 'postgresql.conf')
-        conda.makedirs(os.path.dirname(output))
-        os.chmod(output, 0700)
-                
-        try:
-            os.remove(output)
-        except OSError:
-            pass
-
-        with open(output, 'wt') as fp:
-            fp.write(result)
-        return [output]
 
     def install_pg_supervisor(self, update=False):
         script = supervisor.Recipe(
@@ -178,18 +162,14 @@ class Recipe(object):
             self.system('%s %s' % (os.path.join(bin, 'initdb'), initdb_options) )
 
     def configure_port(self):
-        port = self.options.get('port',None)
-        if not port: return None
-        self.logger.warning( " !!!!!!!!!!!! " )
-        self.logger.warning( " Warning port is not tested at the moment" )
-        self.logger.warning( " !!!!!!!!!!!! " )
-        # Update the port setting and start up the server
-        #FIXME we need to get pgdata from initdb option
-        conffile = os.path.join(self.options.get('pgdata'),'postgresql.conf')
-        f = open(conffile)
-        conf = ('port = %s' % port).join(f.read().split('#port = 5432'))
-        f.close()
-        open(conffile, 'w').write(conf)
+        result = templ_pg_config.render(port=self.options['port'])
+        output = os.path.join(self.prefix, 'var', 'lib', 'postgres', 'postgresql.conf')
+        conda.makedirs(os.path.dirname(output))
+
+        with open(output, 'wt') as fp:
+            fp.write(result)
+        os.chmod(output, 0600)
+        return [output]
 
     def do_cmds(self):
         cmds = self.options.get('cmds', None)
