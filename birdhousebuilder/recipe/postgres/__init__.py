@@ -8,7 +8,6 @@
 """Recipe postgres"""
 import logging
 import os
-import time
 from subprocess import check_call
 import shlex
 from mako.template import Template
@@ -84,14 +83,11 @@ class Recipe(object):
             self.stopdb()
             self.initdb()
             self.configure_port()
-            time.sleep(2)
             
             # apply user commands
             self.startdb()
-            time.sleep(10)
             self.do_cmds()
             self.stopdb()
-            time.sleep(2)
         return tuple()
 
     def update(self):
@@ -101,26 +97,34 @@ class Recipe(object):
     # ---------------
     
     def pgdata_exists(self):
-        return os.path.exists( self.pgdata ) 
-
+        return os.path.exists( self.pgdata )
+    
+    def pg_ctl(self, command=None, options=None):
+        """
+        pg_ctl document: http://www.postgresql.org/docs/current/static/app-pg-ctl.html
+        """
+        if command is not None:
+            cmd = [os.path.join(self.prefix, 'bin', 'pg_ctl'), command, '-D', self.pgdata]
+            cmd.append('-s')                # silent, only print errors
+            cmd.extend( ['-w', '-t', '60'] ) # wait until operation completes, max time = 60 secs
+            if command in ['stop', 'restart']:
+                cmd.extend( ['-m', 'fast']) # fast shutdown, quit diretly with proper shutdown
+            if command in ['init', 'initdb'] and options is not None:
+                cmd.extend( ['-o', '"%s"' % options] ) # initdb options passed in quotes ""
+            try:
+                check_call( cmd )
+            except:
+                self.logger.exception('pg_ctl %s failed! cmd=%s', command, cmd)
+                raise
+    
     def startdb(self):
         if self.is_db_started():
             self.stopdb()
-        cmd = [os.path.join(self.prefix, 'bin', 'pg_ctl'), 'start', '-D', self.pgdata]
-        try:
-            check_call( cmd )
-        except:
-            self.logger.exception('could not start postgres! cmd=%s', cmd)
-            raise
+        self.pg_ctl('start')
 
     def stopdb(self):
         if self.is_db_started():
-            cmd = [os.path.join(self.prefix, 'bin', 'pg_ctl'), 'stop', '-D', self.pgdata]
-            try:
-                check_call(cmd)
-            except:
-                logger.exception('could not stop postgres! cmd=%s', cmd)
-                raise
+            self.pg_ctl('stop')
 
     def is_db_started(self):
         pidfile = os.path.join( self.pgdata, 'postmaster.pid')
@@ -128,15 +132,7 @@ class Recipe(object):
 
     def initdb(self):
         if not self.pgdata_exists():
-            cmd = [os.path.join(self.prefix, 'bin', 'initdb')]
-            cmd.extend( ['--pgdata', self.pgdata] )
-            if self.options.get('initdb') is not None:
-                cmd.append( self.options.get('initdb') )
-            try:
-                check_call(cmd)
-            except:
-                self.logger.exception('initdb failed!')
-                raise
+            self.pg_ctl('initdb', self.options.get('initdb'))
 
     def configure_port(self):
         result = templ_pg_config.render( port=self.options.get('port') )
