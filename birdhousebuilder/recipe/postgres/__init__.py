@@ -8,13 +8,12 @@
 """Recipe postgres"""
 import logging
 import os
-import time
+from subprocess import check_call
+import shlex
 from mako.template import Template
 
 from birdhousebuilder.recipe import conda, supervisor
 
-templ_pg_ctl = Template( "${prefix}/bin/pg_ctl -D ${pgdata} ${cmd}" )
-templ_initdb = Template( "${prefix}/bin/initdb --pgdata=${pgdata} ${options}" )
 templ_pg_config = Template(filename=os.path.join(os.path.dirname(__file__), "postgresql.conf"))
 templ_pg_cmd = Template( "${prefix}/bin/postgres -D ${pgdata}" )
 
@@ -29,6 +28,8 @@ class Recipe(object):
           - cmds : list of psql cmd to execute after all those init
         
         """
+        self.logger = logging.getLogger(name)
+        
         self.buildout, self.name, self.options = buildout, name, options
         b_options = buildout['buildout']
         
@@ -41,8 +42,7 @@ class Recipe(object):
         self.options['initdb'] = self.options.get('initdb', '--auth=trust')
 
     def install(self):
-        """installer"""
-        self.logger = logging.getLogger(self.name)
+        """installer"""       
         installed = []
         installed += list(self.install_pkgs())
         installed += list(self.install_pg_supervisor())
@@ -85,41 +85,40 @@ class Recipe(object):
         return tuple()
 
     def update(self):
-        """updater"""
-        self.logger = logging.getLogger(self.name)
         if not self.pgdata_exists():
             self.stopdb()
             self.initdb()
             self.startdb()
             self.do_cmds()
+            self.stopdb()
         self.configure_port()
-        self.stopdb()
         return tuple()
 
     # helper messages
     # ---------------
     
-    def system(self, cmd):
-        code = os.system(cmd)
-        if code:
-            error_occured = True
-            raise RuntimeError('Error running command: %s' % cmd)
-
     def pgdata_exists(self):
         return os.path.exists( self.pgdata ) 
 
+    def pg_ctl(self, command):
+        cmd = [os.path.join(self.prefix, 'bin', 'pg_ctl')]
+        cmd.extend(['-D', self.pgdata]),
+        cmd.append( command )
+        try:
+            check_call( cmd )
+        except:
+            self.logger.exception('pg_ctl %s failed!', command)
+            raise
+
     def startdb(self):
-        cmd = 'start'
         if self.is_db_started():
-            cmd = 'restart'
-        self.system( templ_pg_ctl.render(prefix=self.prefix, pgdata=self.pgdata, cmd='restart') )
-        # TODO: check if db is realy up
-        time.sleep(10)
+            self.pg_ctl('restart')
+        else:
+            self.pg_ctl('start')
 
     def stopdb(self):
         if self.is_db_started():
-            self.system( templ_pg_ctl.render(prefix=self.prefix, pgdata=self.pgdata, cmd='stop') )
-            time.sleep(10)
+            self.pg_ctl('stop')
 
     def is_db_started(self):
         pidfile = os.path.join( self.pgdata, 'postmaster.pid')
@@ -127,11 +126,15 @@ class Recipe(object):
 
     def initdb(self):
         if not self.pgdata_exists():
-            initdb = templ_initdb.render(
-                prefix=self.prefix,
-                options=self.options.get( 'initdb' ),
-                pgdata=self.pgdata)
-            self.system( initdb )
+            cmd = [os.path.join(self.prefix, 'bin', 'initdb')]
+            cmd.extend( ['--pgdata', self.pgdata] )
+            if self.options.get('initdb') is not None:
+                cmd.append( self.options.get('initdb') )
+            try:
+                check_call(cmd)
+            except:
+                self.logger.exception('initdb failed!')
+                raise
 
     def configure_port(self):
         result = templ_pg_config.render( port=self.options.get('port') )
@@ -152,6 +155,7 @@ class Recipe(object):
             if not cmd:
                 continue
             try:
-                self.system('%s/bin/%s' % (self.prefix, cmd))
-            except RuntimeError, e:
+                check_call( shlex.split( '%s/bin/%s' % (self.prefix, cmd)) )
+            except:
                 self.logger.exception('could not run pg setup commands!')
+                raise
