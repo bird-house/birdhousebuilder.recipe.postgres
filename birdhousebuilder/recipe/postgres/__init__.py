@@ -9,7 +9,6 @@
 import logging
 import os
 import time
-from random import choice
 from mako.template import Template
 
 from birdhousebuilder.recipe import conda, supervisor
@@ -37,17 +36,9 @@ class Recipe(object):
         self.options['prefix'] = self.prefix
 
         self.options['pgdata'] = self.options.get('pgdata', os.path.join(self.prefix, 'var', 'lib', 'postgres'))
+        self.pgdata = self.options['pgdata']
         self.options['port'] = self.options.get('port', '5433')
         self.options['initdb'] = self.options.get('initdb', '--auth=trust')
-
-    def system(self, cmd):
-        code = os.system(cmd)
-        if code:
-            error_occured = True
-            raise RuntimeError('Error running command: %s' % cmd)
-
-    def pgdata_exists(self):
-        return os.path.exists(self.options.get('pgdata')) 
 
     def install(self):
         """installer"""
@@ -63,16 +54,15 @@ class Recipe(object):
             self.buildout,
             self.name,
             {'pkgs': 'postgresql'})
-        
         return script.install()
 
     def install_pg_supervisor(self, update=False):
         script = supervisor.Recipe(
             self.buildout,
-            'postgres',
+            self.name,
             {'program': 'postgres',
-             'command': templ_pg_cmd.render( prefix=self.prefix, pgdata=self.options.get('pgdata') ),
-             'directory': self.options.get('pgdata')
+             'command': templ_pg_cmd.render( prefix=self.prefix, pgdata=self.pgdata ),
+             'directory': self.pgdata
              })
         if update == True:
             script.update()
@@ -81,14 +71,15 @@ class Recipe(object):
         return tuple()
     
     def install_pg(self):
-        #Don't touch an existing database
+        # Don't touch an existing database
         if self.pgdata_exists():
-            self.stopdb()
             return tuple()
+
         self.stopdb()
         self.initdb()
         self.configure_port()
         self.startdb()
+
         self.do_cmds()
         self.stopdb()
         return tuple()
@@ -105,27 +96,41 @@ class Recipe(object):
         self.stopdb()
         return tuple()
 
+    # helper messages
+    # ---------------
+    
+    def system(self, cmd):
+        code = os.system(cmd)
+        if code:
+            error_occured = True
+            raise RuntimeError('Error running command: %s' % cmd)
+
+    def pgdata_exists(self):
+        return os.path.exists( self.pgdata ) 
+
     def startdb(self):
         cmd = 'start'
         if self.is_db_started():
             cmd = 'restart'
-        self.system( templ_pg_ctl.render(prefix=self.prefix, pgdata=self.options.get('pgdata'), cmd='restart') )
+        self.system( templ_pg_ctl.render(prefix=self.prefix, pgdata=self.pgdata, cmd='restart') )
         # TODO: check if db is realy up
         time.sleep(10)
 
     def stopdb(self):
         if self.is_db_started():
-            self.system( templ_pg_ctl.render(prefix=self.prefix, pgdata=self.options.get('pgdata'), cmd='stop') )
+            self.system( templ_pg_ctl.render(prefix=self.prefix, pgdata=self.pgdata, cmd='stop') )
             time.sleep(10)
 
     def is_db_started(self):
-        pidfile = os.path.join( self.options.get('pgdata'), 'postmaster.pid')
+        pidfile = os.path.join( self.pgdata, 'postmaster.pid')
         return os.path.exists( pidfile )
 
     def initdb(self):
-        initdb_options = self.options.get( 'initdb' )
-        if initdb_options and not self.pgdata_exists():
-            initdb = templ_initdb.render(prefix=self.prefix, options=initdb_options, pgdata=self.options.get('pgdata'))
+        if not self.pgdata_exists():
+            initdb = templ_initdb.render(
+                prefix=self.prefix,
+                options=self.options.get( 'initdb' ),
+                pgdata=self.pgdata)
             self.system( initdb )
 
     def configure_port(self):
