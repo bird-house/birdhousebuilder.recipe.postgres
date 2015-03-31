@@ -10,8 +10,9 @@ import logging
 import os
 import time
 from random import choice
+from mako.template import Template
 
-from birdhousebuilder.recipe import conda
+from birdhousebuilder.recipe import conda, supervisor
 
 pg_ctl_script = """#!/bin/sh
 PGDATA=%s %s/pg_ctl $@
@@ -20,6 +21,10 @@ PGDATA=%s %s/pg_ctl $@
 psql_script = """#!/bin/sh
 %s/psql $@
 """
+
+templ_pg_config = Template(filename=os.path.join(os.path.dirname(__file__), "postgresql.conf"))
+templ_pg_cmd = Template(
+    "${prefix}/bin/postgres -D ${prefix}/var/lib/postgres")
 
 class Recipe(object):
     """This recipe is used by zc.buildout"""
@@ -34,9 +39,15 @@ class Recipe(object):
         
         """
         self.buildout, self.name, self.options = buildout, name, options
+        b_options = buildout['buildout']
+        
+        self.prefix = self.options.get('prefix', conda.prefix())
+        self.options['prefix'] = self.prefix
+        
         options['location'] = options['prefix'] = os.path.join(
             buildout['buildout']['parts-directory'],
             name)
+        self.options['port'] = self.options.get('port', '5433')
 
     def system(self, cmd):
         code = os.system(cmd)
@@ -53,6 +64,8 @@ class Recipe(object):
         installed = []
         installed += list(self.install_pkgs())
         installed += list(self.install_pg())
+        installed += list(self.install_pg_config())
+        installed += list(self.install_pg_supervisor())
         return tuple()
 
     def install_pkgs(self):
@@ -81,6 +94,35 @@ class Recipe(object):
         self.do_cmds()
         self.stopdb()
         return self.options['location']
+
+    def install_pg_config(self):
+        result = templ_pg_config.render(port=self.options['port'])
+        output = os.path.join(self.prefix, 'var', 'lib', 'postgres', 'postgresql.conf')
+        conda.makedirs(os.path.dirname(output))
+        os.chmod(output, 0700)
+                
+        try:
+            os.remove(output)
+        except OSError:
+            pass
+
+        with open(output, 'wt') as fp:
+            fp.write(result)
+        return [output]
+
+    def install_pg_supervisor(self, update=False):
+        script = supervisor.Recipe(
+            self.buildout,
+            'postgres',
+            {'program': 'postgres',
+             'command': templ_pg_cmd.render(prefix=self.prefix),
+             'directory': os.path.join(self.prefix, 'var', 'lib', 'postgres')
+             })
+        if update == True:
+            script.update()
+        else:
+            script.install()
+        return tuple()
 
     def update(self):
         """updater"""
