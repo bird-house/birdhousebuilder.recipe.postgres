@@ -5,7 +5,7 @@ This module contains the tool of birdhousebuilder.recipe.postgres
 from setuptools import find_packages
 from setuptools import setup
 
-version = '0.1.0'
+version = '0.2.0'
 description = 'A Buildout recipe to install and configure Postgres database with Anaconda.'
 long_description = (
     open('README.rst').read() + '\n' +
