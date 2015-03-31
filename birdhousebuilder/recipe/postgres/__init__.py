@@ -43,8 +43,10 @@ class Recipe(object):
         
         self.prefix = self.options.get('prefix', conda.prefix())
         self.options['prefix'] = self.prefix
-        
+
+        self.options['pgdata'] = self.options.get('pgdata', os.path.join(self.prefix, 'var', 'lib', 'postgres'))
         self.options['port'] = self.options.get('port', '5433')
+        self.options['initdb'] = self.options.get('initdb', '--auth=trust')
 
     def system(self, cmd):
         code = os.system(cmd)
@@ -60,8 +62,8 @@ class Recipe(object):
         self.logger = logging.getLogger(self.name)
         installed = []
         installed += list(self.install_pkgs())
-        installed += list(self.install_pg())
         installed += list(self.install_pg_supervisor())
+        installed += list(self.install_pg())
         return tuple()
 
     def install_pkgs(self):
@@ -70,10 +72,21 @@ class Recipe(object):
             self.name,
             {'pkgs': 'postgresql'})
         
-        #mypath = os.path.join(self.prefix, 'var', 'lib', 'pywps', 'outputs', self.sites)
-        #conda.makedirs(mypath)
-
         return script.install()
+
+    def install_pg_supervisor(self, update=False):
+        script = supervisor.Recipe(
+            self.buildout,
+            'postgres',
+            {'program': 'postgres',
+             'command': templ_pg_cmd.render(prefix=self.prefix),
+             'directory': self.options['pgdata']
+             })
+        if update == True:
+            script.update()
+        else:
+            script.install()
+        return tuple()
     
     def install_pg(self):
         self.create_bin_scripts()
@@ -87,20 +100,6 @@ class Recipe(object):
         self.startdb()
         self.do_cmds()
         self.stopdb()
-        return tuple()
-
-    def install_pg_supervisor(self, update=False):
-        script = supervisor.Recipe(
-            self.buildout,
-            'postgres',
-            {'program': 'postgres',
-             'command': templ_pg_cmd.render(prefix=self.prefix),
-             'directory': os.path.join(self.prefix, 'var', 'lib', 'postgres')
-             })
-        if update == True:
-            script.update()
-        else:
-            script.install()
         return tuple()
 
     def update(self):
@@ -154,7 +153,7 @@ class Recipe(object):
         initdb_options = self.options.get('initdb',None)
         bin = self.options.get('bin','')
         if initdb_options and not self.pgdata_exists():
-            self.system('%s %s' % (os.path.join(bin, 'initdb'), initdb_options) )
+            self.system('%s %s --pgdata=%s' % (os.path.join(bin, 'initdb'), initdb_options, self.options['pgdata']) )
 
     def configure_port(self):
         result = templ_pg_config.render(port=self.options['port'])
