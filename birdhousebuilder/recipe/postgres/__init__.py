@@ -11,6 +11,8 @@ import os
 import time
 from random import choice
 
+from birdhousebuilder.recipe import conda
+
 pg_ctl_script = """#!/bin/sh
 PGDATA=%s %s/pg_ctl $@
 """
@@ -48,6 +50,23 @@ class Recipe(object):
     def install(self):
         """installer"""
         self.logger = logging.getLogger(self.name)
+        installed = []
+        installed += list(self.install_pkgs())
+        installed += list(self.install_pg())
+        return tuple()
+
+    def install_pkgs(self):
+        script = conda.Recipe(
+            self.buildout,
+            self.name,
+            {'pkgs': 'postgresql'})
+        
+        #mypath = os.path.join(self.prefix, 'var', 'lib', 'pywps', 'outputs', self.sites)
+        #conda.makedirs(mypath)
+
+        return script.install()
+    
+    def install_pg(self):
         self.create_bin_scripts()
         if not os.path.exists(self.options['location']):
             os.mkdir(self.options['location'])
