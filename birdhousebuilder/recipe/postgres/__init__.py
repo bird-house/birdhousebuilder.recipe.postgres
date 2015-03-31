@@ -44,9 +44,6 @@ class Recipe(object):
         self.prefix = self.options.get('prefix', conda.prefix())
         self.options['prefix'] = self.prefix
         
-        options['location'] = os.path.join(
-            buildout['buildout']['parts-directory'],
-            name)
         self.options['port'] = self.options.get('port', '5433')
 
     def system(self, cmd):
@@ -80,19 +77,17 @@ class Recipe(object):
     
     def install_pg(self):
         self.create_bin_scripts()
-        if not os.path.exists(self.options['location']):
-            os.mkdir(self.options['location'])
         #Don't touch an existing database
         if self.pgdata_exists():
             self.stopdb()
-            return self.options['location']
+            return tuple()
         self.stopdb()
         self.initdb()
         self.configure_port()
         self.startdb()
         self.do_cmds()
         self.stopdb()
-        return self.options['location']
+        return tuple()
 
     def install_pg_supervisor(self, update=False):
         script = supervisor.Recipe(
@@ -119,7 +114,7 @@ class Recipe(object):
             self.do_cmds()
         self.configure_port()
         self.stopdb()
-        return self.options['location']
+        return tuple()
 
     def startdb(self):
         if os.path.exists(os.path.join(self.options.get('pgdata'),'postmaster.pid')):
@@ -181,4 +176,3 @@ class Recipe(object):
             try: self.system('%s/%s' % (bin, cmd))
             except RuntimeError, e:
                 self.logger.exception('could not run pg setup commands!')
-        dest = self.options['location']
