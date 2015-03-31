@@ -59,7 +59,7 @@ The recipe supports the following options:
     Options for Postgres initialisation. Default: ``--auth=trust``
 
 **cmds**
-    **psql** commands to setup your database schema and users.
+    ``psql`` commands to setup your database schema and users.
    
 
 Example usage
