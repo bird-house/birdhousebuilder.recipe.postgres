@@ -8,6 +8,7 @@
 """Recipe postgres"""
 import logging
 import os
+import time
 from subprocess import check_call
 import shlex
 from mako.template import Template
@@ -38,6 +39,7 @@ class Recipe(object):
 
         self.options['pgdata'] = self.options.get('pgdata', os.path.join(self.prefix, 'var', 'lib', 'postgres'))
         self.pgdata = self.options['pgdata']
+        conda.makedirs(os.path.dirname(self.pgdata))
         self.options['port'] = self.options.get('port', '5433')
         self.options['initdb'] = self.options.get('initdb', '--auth=trust')
 
@@ -82,11 +84,14 @@ class Recipe(object):
             self.stopdb()
             self.initdb()
             self.configure_port()
+            time.sleep(2)
             
             # apply user commands
             self.startdb()
+            time.sleep(10)
             self.do_cmds()
             self.stopdb()
+            time.sleep(2)
         return tuple()
 
     def update(self):
@@ -98,25 +103,24 @@ class Recipe(object):
     def pgdata_exists(self):
         return os.path.exists( self.pgdata ) 
 
-    def pg_ctl(self, command):
-        cmd = [os.path.join(self.prefix, 'bin', 'pg_ctl')]
-        cmd.extend(['-D', self.pgdata]),
-        cmd.append( command )
+    def startdb(self):
+        if self.is_db_started():
+            self.stopdb()
+        cmd = [os.path.join(self.prefix, 'bin', 'pg_ctl'), 'start', '-D', self.pgdata]
         try:
             check_call( cmd )
         except:
-            self.logger.exception('pg_ctl %s failed!', command)
+            self.logger.exception('could not start postgres! cmd=%s', cmd)
             raise
-
-    def startdb(self):
-        if self.is_db_started():
-            self.pg_ctl('restart')
-        else:
-            self.pg_ctl('start')
 
     def stopdb(self):
         if self.is_db_started():
-            self.pg_ctl('stop')
+            cmd = [os.path.join(self.prefix, 'bin', 'pg_ctl'), 'stop', '-D', self.pgdata]
+            try:
+                check_call(cmd)
+            except:
+                logger.exception('could not stop postgres! cmd=%s', cmd)
+                raise
 
     def is_db_started(self):
         pidfile = os.path.join( self.pgdata, 'postmaster.pid')
@@ -137,8 +141,7 @@ class Recipe(object):
     def configure_port(self):
         result = templ_pg_config.render( port=self.options.get('port') )
         output = os.path.join(self.pgdata, 'postgresql.conf')
-        conda.makedirs(os.path.dirname(output))
-
+        
         with open(output, 'wt') as fp:
             fp.write(result)
         os.chmod(output, 0600)
